@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
+import 'dart:math' as math;
+import '../models/analysis_stats.dart';
 import '../models/otp_stats.dart';
+import '../models/sms_message.dart';
 import '../services/sms_service.dart';
 import '../widgets/stats_card.dart';
 import 'stats_screen.dart';
@@ -14,7 +18,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final SmsService _smsService = SmsService();
-  OtpStats? _stats;
+  AnalysisStats? _stats;
+  List<SmsMessageModel> _allMessages = [];
   bool _isLoading = true;
   String _errorMessage = '';
 
@@ -31,13 +36,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     try {
-      // Get all OTP messages (limit 100)
-      final messages = await _smsService.getOtpMessages(limit: 100);
+      // Get all messages
+      final messages = await _smsService.getAllMessages();
 
-      // Analyze the OTPs
-      final stats = _smsService.analyzeOtpCodes(messages);
+      // Analyze the messages
+      final stats = _smsService.analyzeMessages(messages);
 
       setState(() {
+        _allMessages = messages;
         _stats = stats;
         _isLoading = false;
       });
@@ -53,7 +59,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('OTP Dashboard'),
+        title: const Text('OTP Analyzer Dashboard'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -90,11 +96,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
-    if (_stats == null || _stats!.totalCount == 0) {
+    if (_stats == null || _stats!.otpStats.totalCount == 0) {
       return const Center(
         child: Text('No OTP data available. Try receiving some OTP messages first.'),
       );
     }
+
+    final dateFormat = DateFormat('MMM dd, yyyy');
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -107,7 +115,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Based on the last ${_stats!.totalCount} OTP messages',
+            'Based on ${_stats!.totalMessagesRead} messages analyzed from ${dateFormat.format(_stats!.earliestMessageDate)} to ${dateFormat.format(_stats!.latestMessageDate)}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Found ${_stats!.otpMessagesCount} messages with valid OTP codes',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.grey[600],
             ),
@@ -119,22 +134,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               Expanded(
                 child: StatsCard(
-                  title: 'Total OTPs',
-                  value: _stats!.totalCount.toString(),
-                  icon: Icons.numbers,
+                  title: 'OTP Messages',
+                  value: _stats!.otpMessagesCount.toString(),
+                  icon: Icons.sms,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: StatsCard(
-                  title: 'Randomness',
-                  value: '${_stats!.randomnessScore.toStringAsFixed(1)}/10',
-                  icon: Icons.shuffle,
-                  color: _stats!.randomnessScore > 7 ? Colors.green[50] :
-                  (_stats!.randomnessScore > 4 ? Colors.orange[50] : Colors.red[50]),
+                  title: 'Entropy',
+                  value: '${(_stats!.otpStats.totalEntropy / _stats!.otpStats.maxPossibleEntropy * 100).toStringAsFixed(1)}%',
+                  icon: Icons.bar_chart,
+                  color: _stats!.otpStats.totalEntropy > _stats!.otpStats.maxPossibleEntropy * 0.7 ? Colors.green[50] :
+                  (_stats!.otpStats.totalEntropy > _stats!.otpStats.maxPossibleEntropy * 0.5 ? Colors.orange[50] : Colors.red[50]),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 16),
+
+          // Sender information
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.person),
+                      SizedBox(width: 8),
+                      Text(
+                        'Sender Analysis',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  RichText(
+                    text: TextSpan(
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      children: [
+                        const TextSpan(
+                          text: 'Most frequent OTP sender: ',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        TextSpan(
+                          text: '${_stats!.mostFrequentOtpSender} (${_stats!.mostFrequentOtpSenderCount} messages)',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RichText(
+                    text: TextSpan(
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      children: [
+                        const TextSpan(
+                          text: 'Most frequent overall sender: ',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        TextSpan(
+                          text: '${_stats!.mostFrequentOverallSender} (${_stats!.mostFrequentOverallSenderCount} messages)',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -163,7 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Common patterns
+          // Message categories
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -171,14 +242,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Pattern Detection',
+                    'Message Categories',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _buildPatternSummary(),
+                  _buildMessageCategoriesChart(),
                 ],
               ),
             ),
@@ -214,7 +285,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => StatsScreen(stats: _stats!),
+                          builder: (context) => StatsScreen(stats: _stats!.otpStats),
                         ),
                       );
                     },
@@ -231,7 +302,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildDigitDistributionChart() {
     // Find the maximum value for proper scaling
-    double maxDigitCount = _stats!.mostCommonDigitCount.toDouble();
+    double maxDigitCount = _stats!.otpStats.mostCommonDigitCount.toDouble();
     // Add a little padding (20%) to the top of the chart for better visualization
     double chartMaxY = maxDigitCount * 1.2;
 
@@ -275,13 +346,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             x: i,
             barRods: [
               BarChartRodData(
-                toY: (_stats!.mostCommonDigit == i.toString() ?
-                _stats!.mostCommonDigitCount.toDouble() :
-                (_stats!.leastCommonDigit == i.toString() ?
-                _stats!.leastCommonDigitCount.toDouble() :
-                (_stats!.mostCommonDigitCount.toDouble() + _stats!.leastCommonDigitCount.toDouble()) / 3)),
-                color: i.toString() == _stats!.mostCommonDigit ?
-                Colors.blue : (i.toString() == _stats!.leastCommonDigit ?
+                toY: (_stats!.otpStats.mostCommonDigit == i.toString() ?
+                _stats!.otpStats.mostCommonDigitCount.toDouble() :
+                (_stats!.otpStats.leastCommonDigit == i.toString() ?
+                _stats!.otpStats.leastCommonDigitCount.toDouble() :
+                (_stats!.otpStats.mostCommonDigitCount.toDouble() + _stats!.otpStats.leastCommonDigitCount.toDouble()) / 3)),
+                color: i.toString() == _stats!.otpStats.mostCommonDigit ?
+                Colors.blue : (i.toString() == _stats!.otpStats.leastCommonDigit ?
                 Colors.red : Colors.grey),
                 width: 20,
                 borderRadius: const BorderRadius.only(
@@ -296,123 +367,110 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildPatternSummary() {
-    // Check for any significant patterns
-    List<Widget> patternItems = [];
-
-    // Check prefix patterns
-    Map<String, int> commonPrefixes = Map.from(_stats!.commonPrefixes);
-    commonPrefixes.removeWhere((key, value) => value <= 1);
-
-    if (commonPrefixes.isNotEmpty) {
-      var topPrefixes = commonPrefixes.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-
-      if (topPrefixes.isNotEmpty) {
-        patternItems.add(
-          _buildPatternItem(
-            'Common Prefix: ${topPrefixes.first.key}',
-            'Appears in ${topPrefixes.first.value} OTPs',
-            Icons.format_indent_increase,
-            Colors.blue,
-          ),
-        );
-      }
-    }
-
-    // Check digit pairs
-    Map<String, int> topPairs = Map.from(_stats!.digitPairs);
-    topPairs.removeWhere((key, value) => value <= 2);
-
-    if (topPairs.isNotEmpty) {
-      var sortedPairs = topPairs.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-
-      if (sortedPairs.isNotEmpty) {
-        patternItems.add(
-          _buildPatternItem(
-            'Common Sequence: ${sortedPairs.first.key}',
-            'Appears ${sortedPairs.first.value} times',
-            Icons.linear_scale,
-            Colors.purple,
-          ),
-        );
-      }
-    }
-
-    // Check position bias
-    if (_stats!.positionBias.isNotEmpty) {
-      int positionCount = _stats!.positionBias.length;
-      patternItems.add(
-        _buildPatternItem(
-          'Position Bias Detected',
-          'Found in $positionCount positions',
-          Icons.grid_on,
-          Colors.orange,
-        ),
-      );
-    }
-
-    if (patternItems.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Text(
-            'No significant patterns detected',
-            style: TextStyle(
-              color: Colors.grey,
-              fontStyle: FontStyle.italic,
+  Widget _buildMessageCategoriesChart() {
+    // Create a bar chart for message categories
+    return SizedBox(
+      height: 200,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: math.max(
+            _stats!.otpMessagesCount.toDouble(),
+            math.max(
+              _stats!.otpStringNoCodeCount.toDouble(),
+              _stats!.otherMessagesCount.toDouble(),
             ),
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      children: patternItems,
-    );
-  }
-
-  Widget _buildPatternItem(String title, String subtitle, IconData icon, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+          ) * 1.2, // Add 20% padding
+          barTouchData: BarTouchData(enabled: false),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (double value, TitleMeta meta) {
+                  String label;
+                  switch (value.toInt()) {
+                    case 0:
+                      label = 'OTP';
+                      break;
+                    case 1:
+                      label = 'OTP No Code';
+                      break;
+                    case 2:
+                      label = 'Other';
+                      break;
+                    default:
+                      label = '';
+                  }
+                  return SideTitleWidget(
+                    meta: meta,
+                    space: 4,
+                    angle: 0,
+                    child: Text(
+                      label,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  );
+                },
+                reservedSize: 30,
+              ),
             ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 28,
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+              ),
             ),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
+          borderData: FlBorderData(show: false),
+          gridData: FlGridData(show: true, horizontalInterval: 10),
+          barGroups: [
+            BarChartGroupData(
+              x: 0,
+              barRods: [
+                BarChartRodData(
+                  toY: _stats!.otpMessagesCount.toDouble(),
+                  color: Colors.blue,
+                  width: 40,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(6),
+                    topRight: Radius.circular(6),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            BarChartGroupData(
+              x: 1,
+              barRods: [
+                BarChartRodData(
+                  toY: _stats!.otpStringNoCodeCount.toDouble(),
+                  color: Colors.orange,
+                  width: 40,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(6),
+                    topRight: Radius.circular(6),
+                  ),
+                ),
+              ],
+            ),
+            BarChartGroupData(
+              x: 2,
+              barRods: [
+                BarChartRodData(
+                  toY: _stats!.otherMessagesCount.toDouble(),
+                  color: Colors.grey,
+                  width: 40,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(6),
+                    topRight: Radius.circular(6),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -424,24 +482,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Row(
           children: [
             Text(
-              'OTP Randomness Score: ${_stats!.randomnessScore.toStringAsFixed(1)}/10',
+              'OTP Randomness Score: ${_stats!.otpStats.randomnessScore.toStringAsFixed(1)}/10',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const Spacer(),
             Icon(
-              _stats!.randomnessScore > 7 ? Icons.check_circle :
-              (_stats!.randomnessScore > 4 ? Icons.warning : Icons.error),
-              color: _stats!.randomnessScore > 7 ? Colors.green :
-              (_stats!.randomnessScore > 4 ? Colors.orange : Colors.red),
+              _stats!.otpStats.randomnessScore > 7 ? Icons.check_circle :
+              (_stats!.otpStats.randomnessScore > 4 ? Icons.warning : Icons.error),
+              color: _stats!.otpStats.randomnessScore > 7 ? Colors.green :
+              (_stats!.otpStats.randomnessScore > 4 ? Colors.orange : Colors.red),
             ),
           ],
         ),
         const SizedBox(height: 8),
         LinearProgressIndicator(
-          value: _stats!.randomnessScore / 10,
+          value: _stats!.otpStats.randomnessScore / 10,
           backgroundColor: Colors.grey[300],
-          color: _stats!.randomnessScore > 7 ? Colors.green :
-          (_stats!.randomnessScore > 4 ? Colors.orange : Colors.red),
+          color: _stats!.otpStats.randomnessScore > 7 ? Colors.green :
+          (_stats!.otpStats.randomnessScore > 4 ? Colors.orange : Colors.red),
           minHeight: 8,
         ),
         const SizedBox(height: 8),
@@ -457,11 +515,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _getSecuritySummary() {
-    if (_stats!.randomnessScore > 8) {
+    if (_stats!.otpStats.randomnessScore > 8) {
       return 'Your OTPs appear to be properly randomized with good entropy.';
-    } else if (_stats!.randomnessScore > 6) {
+    } else if (_stats!.otpStats.randomnessScore > 6) {
       return 'Your OTPs show reasonable randomness but have some minor patterns.';
-    } else if (_stats!.randomnessScore > 4) {
+    } else if (_stats!.otpStats.randomnessScore > 4) {
       return 'Some concerning patterns found that reduce OTP security.';
     } else {
       return 'Multiple security concerns detected that significantly reduce OTP randomness.';

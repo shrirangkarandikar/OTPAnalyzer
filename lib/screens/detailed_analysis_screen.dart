@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/sms_message.dart';
+import '../models/otp_stats.dart';
 import '../services/sms_service.dart';
 import '../widgets/sms_message_card.dart';
 
@@ -12,10 +13,11 @@ class DetailedAnalysisScreen extends StatefulWidget {
 
 class _DetailedAnalysisScreenState extends State<DetailedAnalysisScreen> {
   final SmsService _smsService = SmsService();
-  List<SmsMessageModel> _messages = [];
+  List<SmsMessageModel> _allMessages = [];
+  List<SmsMessageModel> _otpMessages = [];
+  Map<String, List<SmsMessageModel>> _categorizedOtps = {};
   bool _isLoading = true;
   String _errorMessage = '';
-  Map<String, List<SmsMessageModel>> _categorizedOtps = {};
 
   @override
   void initState() {
@@ -30,16 +32,17 @@ class _DetailedAnalysisScreenState extends State<DetailedAnalysisScreen> {
     });
 
     try {
-      final messages = await _smsService.getOtpMessages(limit: 100);
+      final messages = await _smsService.getAllMessages();
 
-      // Only keep messages with extracted OTP codes
-      final otpMessages = messages.where((msg) => msg.otpCode != null).toList();
+      // Get only messages with OTP codes
+      final otpMessages = _smsService.getOtpMessages(messages);
 
       // Categorize OTPs
       final categorized = _categorizeOtps(otpMessages);
 
       setState(() {
-        _messages = otpMessages;
+        _allMessages = messages;
+        _otpMessages = otpMessages;
         _categorizedOtps = categorized;
         _isLoading = false;
       });
@@ -191,7 +194,7 @@ class _DetailedAnalysisScreenState extends State<DetailedAnalysisScreen> {
       );
     }
 
-    if (_messages.isEmpty) {
+    if (_otpMessages.isEmpty) {
       return const Center(
         child: Text('No OTP messages found'),
       );
@@ -203,7 +206,7 @@ class _DetailedAnalysisScreenState extends State<DetailedAnalysisScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Analyzed ${_messages.length} OTP messages',
+            'Analyzed ${_otpMessages.length} OTP messages out of ${_allMessages.length} total messages',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 24),

@@ -1,12 +1,14 @@
 import 'package:telephony/telephony.dart';
 import '../models/sms_message.dart';
 import '../models/otp_stats.dart';
+import '../models/analysis_stats.dart';
 import 'dart:math' as math;
+import 'dart:developer' as developer;
 
 class SmsService {
   final Telephony _telephony = Telephony.instance;
 
-  Future<List<SmsMessageModel>> getOtpMessages({int limit = 50}) async {
+  Future<List<SmsMessageModel>> getAllMessages({int limit = 10000}) async {
     try {
       // Request permission using telephony package's built-in method
       bool? permissionsGranted = await _telephony.requestPhoneAndSmsPermissions;
@@ -15,7 +17,7 @@ class SmsService {
         throw Exception('SMS permissions not granted');
       }
 
-      // Get all SMS inbox messages - we'll filter for OTP ourselves
+      // Get all SMS inbox messages
       final messages = await _telephony.getInboxSms(
         columns: [
           SmsColumn.ID,
@@ -27,28 +29,27 @@ class SmsService {
         sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
       );
 
-      // Filter messages containing "OTP" (case insensitive)
-      final otpMessages = messages.where((message) =>
-      message.body != null &&
-          message.body!.toUpperCase().contains("OTP")
-      ).toList();
+      // Take only the specified number of messages
+      final limitedMessages = limit > 0 && limit < messages.length
+          ? messages.take(limit).toList()
+          : messages;
 
-      // Take only the specified number of OTP messages (which are already sorted by date desc)
-      final limitedOtpMessages = limit > 0 ? otpMessages.take(limit).toList() : otpMessages;
-
-      // Convert to our model and extract OTP code
-      return limitedOtpMessages.map((message) {
-        String? otpCode = extractOtpCode(message.body ?? '');
+      // Convert to our model and check for OTP content
+      return limitedMessages.map((message) {
+        final messageBody = message.body ?? '';
+        final hasOtpString = messageBody.toUpperCase().contains("OTP");
+        final otpCode = hasOtpString ? extractOtpCode(messageBody) : null;
 
         return SmsMessageModel(
           id: int.parse(message.id.toString()),
           address: message.address ?? 'Unknown',
-          body: message.body ?? 'No content',
+          body: messageBody,
           date: DateTime.fromMillisecondsSinceEpoch(
             int.parse(message.date.toString()),
           ),
           isRead: message.read == 1,
           otpCode: otpCode,
+          hasOtpString: hasOtpString,
         );
       }).toList();
     } catch (e) {
@@ -60,19 +61,20 @@ class SmsService {
     // Define regex patterns for the three formats plus a general 6-digit catch-all
     final List<RegExp> patterns = [
       // Pattern 1: Please use OTP-xxxxxx
-      RegExp(r'OTP-(\d{6})'),
+      RegExp(r'OTP-(\d{6})(?!\d)'),
 
       // Pattern 2: The OTP for Reference No yyyyyyyyyy is xxxxxx
-      RegExp(r'OTP for.*?Reference No.*?is (\d{6})'),
+      RegExp(r'OTP for.*?Reference No.*?is (\d{6})(?!\d)'),
 
       // Pattern 3: Your OTP for redemption request... is xxxxxx
-      RegExp(r'OTP for redemption request.*?is (\d{6})'),
+      RegExp(r'OTP for redemption request.*?is (\d{6})(?!\d)'),
 
       // General pattern: Find any 6-digit code after "OTP" (case insensitive)
-      RegExp(r'OTP.*?(\d{6})', caseSensitive: false),
+      RegExp(r'OTP.*?(?<!\d)(\d{6})(?!\d)', caseSensitive: false),
 
-      // Last resort: Just find any 6 consecutive digits
-      RegExp(r'\b(\d{6})\b'),
+      // Last resort: Just find any isolated 6 consecutive digits
+      // This will match a 6-digit number that is not part of a longer number
+      RegExp(r'(?<!\d)(\d{6})(?!\d)'),
     ];
 
     // Try each pattern in sequence until we find a match
@@ -84,6 +86,96 @@ class SmsService {
     }
 
     return null; // No OTP found
+  }
+
+  AnalysisStats analyzeMessages(List<SmsMessageModel> messages) {
+    if (messages.isEmpty) {
+      return AnalysisStats(
+        totalMessagesRead: 0,
+        otpMessagesCount: 0,
+        otpStringNoCodeCount: 0,
+        otherMessagesCount: 0,
+        earliestMessageDate: DateTime.now(),
+        latestMessageDate: DateTime.now(),
+        mostFrequentOtpSender: '',
+        mostFrequentOtpSenderCount: 0,
+        mostFrequentOverallSender: '',
+        mostFrequentOverallSenderCount: 0,
+        otpStats: OtpStats.empty(),
+      );
+    }
+
+    // Categorize messages
+    final otpMessages = messages.where((msg) => msg.otpCode != null).toList();
+    final otpStringNoCodeMessages = messages.where((msg) => msg.hasOtpString && msg.otpCode == null).toList();
+    final otherMessages = messages.where((msg) => !msg.hasOtpString).toList();
+
+    // Find date range
+    DateTime earliestDate = messages.map((m) => m.date).reduce((a, b) => a.isBefore(b) ? a : b);
+    DateTime latestDate = messages.map((m) => m.date).reduce((a, b) => a.isAfter(b) ? a : b);
+
+    // Find most frequent senders
+    Map<String, int> otpSenderCounts = {};
+    for (var msg in otpMessages) {
+      otpSenderCounts[msg.address] = (otpSenderCounts[msg.address] ?? 0) + 1;
+    }
+
+    Map<String, int> overallSenderCounts = {};
+    for (var msg in messages) {
+      overallSenderCounts[msg.address] = (overallSenderCounts[msg.address] ?? 0) + 1;
+    }
+
+    String mostFrequentOtpSender = '';
+    int mostFrequentOtpSenderCount = 0;
+
+    if (otpSenderCounts.isNotEmpty) {
+      var sorted = otpSenderCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      mostFrequentOtpSender = sorted.first.key;
+      mostFrequentOtpSenderCount = sorted.first.value;
+    }
+
+    String mostFrequentOverallSender = '';
+    int mostFrequentOverallSenderCount = 0;
+
+    if (overallSenderCounts.isNotEmpty) {
+      var sorted = overallSenderCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      mostFrequentOverallSender = sorted.first.key;
+      mostFrequentOverallSenderCount = sorted.first.value;
+    }
+
+    // Analyze OTP codes
+    final otpStats = analyzeOtpCodes(otpMessages);
+
+    return AnalysisStats(
+      totalMessagesRead: messages.length,
+      otpMessagesCount: otpMessages.length,
+      otpStringNoCodeCount: otpStringNoCodeMessages.length,
+      otherMessagesCount: otherMessages.length,
+      earliestMessageDate: earliestDate,
+      latestMessageDate: latestDate,
+      mostFrequentOtpSender: mostFrequentOtpSender,
+      mostFrequentOtpSenderCount: mostFrequentOtpSenderCount,
+      mostFrequentOverallSender: mostFrequentOverallSender,
+      mostFrequentOverallSenderCount: mostFrequentOverallSenderCount,
+      otpStats: otpStats,
+    );
+  }
+
+  // Helper function to calculate Shannon entropy for a frequency map
+  double calculateEntropy(Map<String, int> frequencyMap) {
+    if (frequencyMap.isEmpty) return 0.0;
+
+    int totalCount = frequencyMap.values.reduce((a, b) => a + b);
+    double entropy = 0.0;
+
+    for (var count in frequencyMap.values) {
+      double probability = count / totalCount;
+      entropy -= probability * (math.log(probability) / math.ln2);
+    }
+
+    return entropy;
   }
 
   OtpStats analyzeOtpCodes(List<SmsMessageModel> messages) {
@@ -215,6 +307,30 @@ class SmsService {
     // Ensure score is between 0 and 10
     randomnessScore = math.max(0, math.min(10, randomnessScore));
 
+    // Calculate entropy metrics
+    double digitEntropy = calculateEntropy(digitFrequency);
+
+    // Calculate position entropy
+    List<double> positionEntropy = [];
+    for (int position = 0; position < 6; position++) {
+      if (positionDigitFrequency[position]!.isNotEmpty) {
+        positionEntropy.add(calculateEntropy(positionDigitFrequency[position]!));
+      } else {
+        positionEntropy.add(0.0);
+      }
+    }
+
+    // Add padding to ensure we have 6 values
+    while (positionEntropy.length < 6) {
+      positionEntropy.add(0.0);
+    }
+
+    // Calculate total entropy (average of all positions)
+    double totalEntropy = positionEntropy.reduce((a, b) => a + b) / 6;
+
+    // Maximum possible entropy (log2(10) for 10 possible digits)
+    double maxPossibleEntropy = 3.32;
+
     // Build stats object
     return OtpStats(
       totalCount: otpCodes.length,
@@ -230,6 +346,23 @@ class SmsService {
       digitPairs: digitPairFrequency,
       positionBias: positionBias,
       randomnessScore: randomnessScore,
+      digitEntropy: digitEntropy,
+      positionEntropy: positionEntropy,
+      totalEntropy: totalEntropy,
+      maxPossibleEntropy: maxPossibleEntropy,
     );
+  }
+
+  // Get categorized messages
+  List<SmsMessageModel> getOtpMessages(List<SmsMessageModel> allMessages) {
+    return allMessages.where((msg) => msg.otpCode != null).toList();
+  }
+
+  List<SmsMessageModel> getOtpStringNoCodeMessages(List<SmsMessageModel> allMessages) {
+    return allMessages.where((msg) => msg.hasOtpString && msg.otpCode == null).toList();
+  }
+
+  List<SmsMessageModel> getOtherMessages(List<SmsMessageModel> allMessages) {
+    return allMessages.where((msg) => !msg.hasOtpString).toList();
   }
 }

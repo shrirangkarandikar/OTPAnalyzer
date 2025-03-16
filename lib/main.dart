@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'screens/sms_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/detailed_analysis_screen.dart';
+import 'screens/message_categories_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -34,7 +34,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
   final List<Widget> _screens = [
     const DashboardScreen(),
-    const SmsScreen(),
+    const MessageCategoriesScreen(),
     const DetailedAnalysisScreen(),
   ];
 

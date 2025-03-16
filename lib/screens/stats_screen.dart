@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/otp_stats.dart';
 import '../widgets/stats_card.dart';
+import '../widgets/entropy_chart.dart';
 
 class StatsScreen extends StatelessWidget {
   final OtpStats stats;
@@ -25,37 +26,7 @@ class StatsScreen extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 16),
-
-            // Basic stats
-            Row(
-              children: [
-                Expanded(
-                  child: StatsCard(
-                    title: 'Average Value',
-                    value: stats.averageValue.toStringAsFixed(2),
-                    icon: Icons.calculate,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: StatsCard(
-                    title: 'Min Value',
-                    value: stats.minValue.toString(),
-                    icon: Icons.arrow_downward,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: StatsCard(
-                    title: 'Max Value',
-                    value: stats.maxValue.toString(),
-                    icon: Icons.arrow_upward,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
             // Digit frequency
             Row(
@@ -199,6 +170,60 @@ class StatsScreen extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Entropy analysis
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.bar_chart),
+                        SizedBox(width: 8),
+                        Text(
+                          'Entropy Analysis',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Shannon entropy measures randomness - higher values indicate better randomness',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildEntropyIndicator(
+                            'Overall Entropy',
+                            stats.totalEntropy,
+                            stats.maxPossibleEntropy,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildEntropyIndicator(
+                            'Digit Entropy',
+                            stats.digitEntropy,
+                            stats.maxPossibleEntropy,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    EntropyChart(
+                      positionEntropy: stats.positionEntropy,
+                      maxPossibleEntropy: stats.maxPossibleEntropy,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
             const SizedBox(height: 16),
 
             // Security analysis
@@ -347,9 +372,87 @@ class StatsScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildEntropyIndicator(String title, double entropy, double maxEntropy) {
+    // Calculate percentage of max possible entropy
+    double percentage = (entropy / maxEntropy) * 100;
+
+    // Determine color based on entropy percentage
+    Color color;
+    if (percentage > 90) {
+      color = Colors.green;
+    } else if (percentage > 70) {
+      color = Colors.lightGreen;
+    } else if (percentage > 50) {
+      color = Colors.amber;
+    } else if (percentage > 30) {
+      color = Colors.orange;
+    } else {
+      color = Colors.red;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${entropy.toStringAsFixed(2)} / ${maxEntropy.toStringAsFixed(2)}',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: entropy / maxEntropy,
+          backgroundColor: Colors.grey[200],
+          color: color,
+          minHeight: 6,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${percentage.toStringAsFixed(1)}% of ideal',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
   String _getRandomnessAnalysis(OtpStats stats) {
     final List<String> insights = [];
 
+    // Add entropy-based insights
+    if (stats.totalEntropy > stats.maxPossibleEntropy * 0.9) {
+      insights.add('✅ High entropy indicates excellent randomness in your OTPs.');
+    } else if (stats.totalEntropy < stats.maxPossibleEntropy * 0.5) {
+      insights.add('⚠️ Low entropy detected. Your OTPs have significantly less randomness than ideal.');
+    }
+
+    // Check for position with lowest entropy
+    int lowestEntropyPosition = 0;
+    double lowestEntropy = stats.positionEntropy[0];
+    for (int i = 1; i < stats.positionEntropy.length; i++) {
+      if (stats.positionEntropy[i] < lowestEntropy) {
+        lowestEntropy = stats.positionEntropy[i];
+        lowestEntropyPosition = i;
+      }
+    }
+
+    if (lowestEntropy < stats.maxPossibleEntropy * 0.5) {
+      insights.add('⚠️ Position ${lowestEntropyPosition + 1} has particularly low entropy (${lowestEntropy.toStringAsFixed(2)}), suggesting predictable patterns.');
+    }
+
+    // Add original pattern-based insights
     if (stats.randomnessScore > 8) {
       insights.add('✅ Your OTPs appear to be properly randomized with no significant patterns detected.');
     } else {

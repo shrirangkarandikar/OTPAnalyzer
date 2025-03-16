@@ -4,7 +4,8 @@ class SmsMessageModel {
   final String body;
   final DateTime date;
   final bool isRead;
-  final String? otpCode; // Added OTP code field
+  final String? otpCode; // OTP code if found
+  final bool hasOtpString; // Contains "OTP" string but may not have valid code
 
   SmsMessageModel({
     required this.id,
@@ -13,5 +14,6 @@ class SmsMessageModel {
     required this.date,
     required this.isRead,
     this.otpCode,
+    this.hasOtpString = false,
   });
 }

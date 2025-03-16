@@ -7,12 +7,13 @@ class OtpStats {
   final int mostCommonDigitCount;
   final String leastCommonDigit;
   final int leastCommonDigitCount;
-  final bool hasSequentialOtp;
-  final bool hasAllSameDigitsOtp;
-  final int palindromeCount;
-  final int risingPatternCount;
-  final int fallingPatternCount;
-  final int alternatingPatternCount;
+
+  // New pattern analysis fields
+  final Map<String, int> commonPrefixes; // Maps prefix to count
+  final Map<String, int> commonSuffixes; // Maps suffix to count
+  final Map<String, int> digitPairs; // Maps digit pairs to count
+  final Map<int, int> positionBias; // Maps position to most common digit
+  final double randomnessScore; // 0-10 score of randomness
 
   OtpStats({
     required this.totalCount,
@@ -23,12 +24,11 @@ class OtpStats {
     required this.mostCommonDigitCount,
     required this.leastCommonDigit,
     required this.leastCommonDigitCount,
-    required this.hasSequentialOtp,
-    required this.hasAllSameDigitsOtp,
-    required this.palindromeCount,
-    required this.risingPatternCount,
-    required this.fallingPatternCount,
-    required this.alternatingPatternCount,
+    required this.commonPrefixes,
+    required this.commonSuffixes,
+    required this.digitPairs,
+    required this.positionBias,
+    required this.randomnessScore,
   });
 
   factory OtpStats.empty() {
@@ -41,12 +41,11 @@ class OtpStats {
       mostCommonDigitCount: 0,
       leastCommonDigit: '',
       leastCommonDigitCount: 0,
-      hasSequentialOtp: false,
-      hasAllSameDigitsOtp: false,
-      palindromeCount: 0,
-      risingPatternCount: 0,
-      fallingPatternCount: 0,
-      alternatingPatternCount: 0,
+      commonPrefixes: {},
+      commonSuffixes: {},
+      digitPairs: {},
+      positionBias: {},
+      randomnessScore: 10.0,
     );
   }
 }

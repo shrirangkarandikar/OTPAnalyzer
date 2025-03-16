@@ -3,7 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../models/otp_stats.dart';
 import '../services/sms_service.dart';
 import '../widgets/stats_card.dart';
-import 'stats_screen.dart'; // Import stats_screen.dart
+import 'stats_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -127,9 +127,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: StatsCard(
-                  title: 'Avg. Value',
-                  value: _stats!.averageValue.toStringAsFixed(0),
-                  icon: Icons.calculate,
+                  title: 'Randomness',
+                  value: '${_stats!.randomnessScore.toStringAsFixed(1)}/10',
+                  icon: Icons.shuffle,
+                  color: _stats!.randomnessScore > 7 ? Colors.green[50] :
+                  (_stats!.randomnessScore > 4 ? Colors.orange[50] : Colors.red[50]),
                 ),
               ),
             ],
@@ -155,6 +157,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     height: 200,
                     child: _buildDigitDistributionChart(),
                   ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Common patterns
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Pattern Detection',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildPatternSummary(),
                 ],
               ),
             ),
@@ -272,50 +296,157 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildPatternSummary() {
+    // Check for any significant patterns
+    List<Widget> patternItems = [];
+
+    // Check prefix patterns
+    Map<String, int> commonPrefixes = Map.from(_stats!.commonPrefixes);
+    commonPrefixes.removeWhere((key, value) => value <= 1);
+
+    if (commonPrefixes.isNotEmpty) {
+      var topPrefixes = commonPrefixes.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      if (topPrefixes.isNotEmpty) {
+        patternItems.add(
+          _buildPatternItem(
+            'Common Prefix: ${topPrefixes.first.key}',
+            'Appears in ${topPrefixes.first.value} OTPs',
+            Icons.format_indent_increase,
+            Colors.blue,
+          ),
+        );
+      }
+    }
+
+    // Check digit pairs
+    Map<String, int> topPairs = Map.from(_stats!.digitPairs);
+    topPairs.removeWhere((key, value) => value <= 2);
+
+    if (topPairs.isNotEmpty) {
+      var sortedPairs = topPairs.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      if (sortedPairs.isNotEmpty) {
+        patternItems.add(
+          _buildPatternItem(
+            'Common Sequence: ${sortedPairs.first.key}',
+            'Appears ${sortedPairs.first.value} times',
+            Icons.linear_scale,
+            Colors.purple,
+          ),
+        );
+      }
+    }
+
+    // Check position bias
+    if (_stats!.positionBias.isNotEmpty) {
+      int positionCount = _stats!.positionBias.length;
+      patternItems.add(
+        _buildPatternItem(
+          'Position Bias Detected',
+          'Found in $positionCount positions',
+          Icons.grid_on,
+          Colors.orange,
+        ),
+      );
+    }
+
+    if (patternItems.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text(
+            'No significant patterns detected',
+            style: TextStyle(
+              color: Colors.grey,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: patternItems,
+    );
+  }
+
+  Widget _buildPatternItem(String title, String subtitle, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSecurityIndicator() {
-    // Determine security score based on patterns detected
-    int securityIssues = 0;
-    if (_stats!.hasSequentialOtp) securityIssues++;
-    if (_stats!.hasAllSameDigitsOtp) securityIssues++;
-    if (_stats!.palindromeCount > 0) securityIssues++;
-    if (_stats!.risingPatternCount > 0) securityIssues++;
-    if (_stats!.fallingPatternCount > 0) securityIssues++;
-    if (_stats!.alternatingPatternCount > 0) securityIssues++;
-
-    int securityScore = 10 - securityIssues;
-    securityScore = securityScore.clamp(0, 10);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Text(
-              'Security Score: ${securityScore.toStringAsFixed(1)}/10',
+              'OTP Randomness Score: ${_stats!.randomnessScore.toStringAsFixed(1)}/10',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const Spacer(),
             Icon(
-              securityScore > 7 ? Icons.check_circle :
-              (securityScore > 4 ? Icons.warning : Icons.error),
-              color: securityScore > 7 ? Colors.green :
-              (securityScore > 4 ? Colors.orange : Colors.red),
+              _stats!.randomnessScore > 7 ? Icons.check_circle :
+              (_stats!.randomnessScore > 4 ? Icons.warning : Icons.error),
+              color: _stats!.randomnessScore > 7 ? Colors.green :
+              (_stats!.randomnessScore > 4 ? Colors.orange : Colors.red),
             ),
           ],
         ),
         const SizedBox(height: 8),
         LinearProgressIndicator(
-          value: securityScore / 10,
+          value: _stats!.randomnessScore / 10,
           backgroundColor: Colors.grey[300],
-          color: securityScore > 7 ? Colors.green :
-          (securityScore > 4 ? Colors.orange : Colors.red),
+          color: _stats!.randomnessScore > 7 ? Colors.green :
+          (_stats!.randomnessScore > 4 ? Colors.orange : Colors.red),
           minHeight: 8,
         ),
         const SizedBox(height: 8),
         Text(
-          securityScore > 7 ? 'Your OTPs appear to be properly randomized.' :
-          (securityScore > 4 ? 'Some pattern concerns found in your OTPs.' :
-          'Multiple security concerns detected in your OTPs.'),
+          _getSecuritySummary(),
           style: TextStyle(
             color: Colors.grey[800],
             fontSize: 13,
@@ -323,5 +454,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ],
     );
+  }
+
+  String _getSecuritySummary() {
+    if (_stats!.randomnessScore > 8) {
+      return 'Your OTPs appear to be properly randomized with good entropy.';
+    } else if (_stats!.randomnessScore > 6) {
+      return 'Your OTPs show reasonable randomness but have some minor patterns.';
+    } else if (_stats!.randomnessScore > 4) {
+      return 'Some concerning patterns found that reduce OTP security.';
+    } else {
+      return 'Multiple security concerns detected that significantly reduce OTP randomness.';
+    }
   }
 }

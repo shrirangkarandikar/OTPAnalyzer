@@ -1,6 +1,7 @@
 import 'package:telephony/telephony.dart';
 import '../models/sms_message.dart';
 import '../models/otp_stats.dart';
+import 'dart:math' as math;
 
 class SmsService {
   final Telephony _telephony = Telephony.instance;
@@ -119,53 +120,100 @@ class SmsService {
     int min = otpInts.reduce((a, b) => a < b ? a : b);
     int max = otpInts.reduce((a, b) => a > b ? a : b);
 
-    // Check if any OTPs are sequential digits (e.g., 123456)
-    bool hasSequential = otpCodes.any((otp) {
-      for (var i = 0; i < otp.length - 1; i++) {
-        if (int.parse(otp[i]) + 1 != int.parse(otp[i + 1])) {
-          return false;
-        }
+    // Analyze prefixes (first 2 digits)
+    Map<String, int> prefixFrequency = {};
+    for (var otp in otpCodes) {
+      if (otp.length >= 2) {
+        String prefix = otp.substring(0, 2);
+        prefixFrequency[prefix] = (prefixFrequency[prefix] ?? 0) + 1;
       }
-      return true;
-    });
+    }
 
-    // Check if any OTPs have all same digits (e.g., 555555)
-    bool hasAllSameDigits = otpCodes.any((otp) {
-      final firstDigit = otp[0];
-      return otp.split('').every((digit) => digit == firstDigit);
-    });
+    // Analyze suffixes (last 2 digits)
+    Map<String, int> suffixFrequency = {};
+    for (var otp in otpCodes) {
+      if (otp.length >= 2) {
+        String suffix = otp.substring(otp.length - 2);
+        suffixFrequency[suffix] = (suffixFrequency[suffix] ?? 0) + 1;
+      }
+    }
 
-    // Count how many OTPs are palindromes (same forwards and backwards)
-    int palindromeCount = otpCodes.where((otp) {
-      return otp == otp.split('').reversed.join();
-    }).length;
+    // Analyze digit pairs
+    Map<String, int> digitPairFrequency = {};
+    for (var otp in otpCodes) {
+      for (var i = 0; i < otp.length - 1; i++) {
+        String pair = otp.substring(i, i + 2);
+        digitPairFrequency[pair] = (digitPairFrequency[pair] ?? 0) + 1;
+      }
+    }
 
-    // Check for patterns (rising, falling, alternating)
-    int risingPatterns = 0;
-    int fallingPatterns = 0;
-    int alternatingPatterns = 0;
+    // Analyze position bias
+    Map<int, Map<String, int>> positionDigitFrequency = {};
+    for (int position = 0; position < 6; position++) {
+      positionDigitFrequency[position] = {};
+    }
 
     for (var otp in otpCodes) {
-      bool isRising = true;
-      bool isFalling = true;
-      bool isAlternating = true;
+      for (var i = 0; i < math.min(otp.length, 6); i++) {
+        String digit = otp[i];
+        positionDigitFrequency[i]![digit] = (positionDigitFrequency[i]![digit] ?? 0) + 1;
+      }
+    }
 
-      for (var i = 0; i < otp.length - 1; i++) {
-        int current = int.parse(otp[i]);
-        int next = int.parse(otp[i + 1]);
+    // Find most common digit at each position
+    Map<int, int> positionBias = {};
+    for (int position = 0; position < 6; position++) {
+      if (positionDigitFrequency[position]!.isNotEmpty) {
+        var mostCommon = positionDigitFrequency[position]!.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
 
-        if (current >= next) isRising = false;
-        if (current <= next) isFalling = false;
-        if (i < otp.length - 2) {
-          int afterNext = int.parse(otp[i + 2]);
-          if (current != afterNext) isAlternating = false;
+        if (mostCommon.isNotEmpty) {
+          positionBias[position] = int.parse(mostCommon.first.key);
         }
       }
-
-      if (isRising) risingPatterns++;
-      if (isFalling) fallingPatterns++;
-      if (isAlternating) alternatingPatterns++;
     }
+
+    // Calculate randomness score (0-10)
+    double randomnessScore = 10.0;
+
+    // Reduce score based on prefix/suffix frequency
+    if (prefixFrequency.isNotEmpty) {
+      var mostCommonPrefix = prefixFrequency.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      double prefixRatio = mostCommonPrefix.first.value / otpCodes.length;
+      if (prefixRatio > 0.2) { // More than 20% have same prefix
+        randomnessScore -= (prefixRatio - 0.2) * 10;
+      }
+    }
+
+    // Check position bias
+    int totalPositions = 6;
+    double expectedFrequency = 0.1; // With 10 possible digits (0-9)
+    double biasScore = 0;
+
+    for (int position = 0; position < 6; position++) {
+      if (positionDigitFrequency[position]!.isNotEmpty) {
+        var digitCounts = positionDigitFrequency[position]!.values.toList();
+        int totalDigits = digitCounts.reduce((a, b) => a + b);
+
+        // Calculate chi-square-like statistic for position
+        double positionBiasScore = 0;
+        for (var count in digitCounts) {
+          double frequency = count / totalDigits;
+          double deviation = frequency - expectedFrequency;
+          positionBiasScore += (deviation * deviation);
+        }
+
+        biasScore += positionBiasScore;
+      }
+    }
+
+    // Reduce score based on average position bias
+    randomnessScore -= math.min(3.0, biasScore * 5);
+
+    // Ensure score is between 0 and 10
+    randomnessScore = math.max(0, math.min(10, randomnessScore));
 
     // Build stats object
     return OtpStats(
@@ -177,12 +225,11 @@ class SmsService {
       mostCommonDigitCount: sortedDigits.first.value,
       leastCommonDigit: sortedDigits.last.key,
       leastCommonDigitCount: sortedDigits.last.value,
-      hasSequentialOtp: hasSequential,
-      hasAllSameDigitsOtp: hasAllSameDigits,
-      palindromeCount: palindromeCount,
-      risingPatternCount: risingPatterns,
-      fallingPatternCount: fallingPatterns,
-      alternatingPatternCount: alternatingPatterns,
+      commonPrefixes: prefixFrequency,
+      commonSuffixes: suffixFrequency,
+      digitPairs: digitPairFrequency,
+      positionBias: positionBias,
+      randomnessScore: randomnessScore,
     );
   }
 }

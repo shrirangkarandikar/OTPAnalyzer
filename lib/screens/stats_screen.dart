@@ -79,9 +79,9 @@ class StatsScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
-            // Pattern analysis
+            // Common prefixes and suffixes
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -89,38 +89,112 @@ class StatsScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Pattern Analysis',
+                      'Prefix & Suffix Analysis',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Common Prefixes',
+                                  style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 8),
+                              ...stats.commonPrefixes.entries
+                                  .toList()
+                                  .where((e) => e.value > 1) // Only show prefixes that appear more than once
+                                  .take(3) // Top 3
+                                  .map((e) => _buildFrequencyItem(e.key, e.value, stats.totalCount))
+                                  .toList(),
+                              if (stats.commonPrefixes.entries.where((e) => e.value > 1).isEmpty)
+                                const Text('No common prefixes found',
+                                    style: TextStyle(fontStyle: FontStyle.italic)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Common Suffixes',
+                                  style: TextStyle(fontWeight: FontWeight.w500)),
+                              const SizedBox(height: 8),
+                              ...stats.commonSuffixes.entries
+                                  .toList()
+                                  .where((e) => e.value > 1) // Only show suffixes that appear more than once
+                                  .take(3) // Top 3
+                                  .map((e) => _buildFrequencyItem(e.key, e.value, stats.totalCount))
+                                  .toList(),
+                              if (stats.commonSuffixes.entries.where((e) => e.value > 1).isEmpty)
+                                const Text('No common suffixes found',
+                                    style: TextStyle(fontStyle: FontStyle.italic)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Digit pair analysis
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Digit Pair Analysis',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     const SizedBox(height: 8),
-                    _buildPatternItem(
-                      'Sequential digits (e.g., 123456)',
-                      stats.hasSequentialOtp,
+                    const Text(
+                      'Consecutive digit pairs that appear frequently',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
-                    _buildPatternItem(
-                      'All same digits (e.g., 555555)',
-                      stats.hasAllSameDigitsOtp,
+                    const SizedBox(height: 16),
+                    Column(
+                      children: stats.digitPairs.entries
+                          .toList()
+                          .where((e) => e.value > 2) // Only show pairs that appear more than twice
+                          .take(5) // Top 5
+                          .map((e) => _buildFrequencyItem(e.key, e.value, stats.totalCount * 5))
+                          .toList(),
                     ),
-                    _buildPatternItem(
-                      'Palindromes (same forwards & backwards)',
-                      stats.palindromeCount > 0,
-                      count: stats.palindromeCount,
+                    if (stats.digitPairs.entries.where((e) => e.value > 2).isEmpty)
+                      const Text('No significant digit pairs found',
+                          style: TextStyle(fontStyle: FontStyle.italic)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Position bias
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Position Bias Analysis',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
-                    _buildPatternItem(
-                      'Rising patterns (e.g., 135789)',
-                      stats.risingPatternCount > 0,
-                      count: stats.risingPatternCount,
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Most common digit at each position',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
-                    _buildPatternItem(
-                      'Falling patterns (e.g., 987532)',
-                      stats.fallingPatternCount > 0,
-                      count: stats.fallingPatternCount,
-                    ),
-                    _buildPatternItem(
-                      'Alternating patterns (e.g., 131313)',
-                      stats.alternatingPatternCount > 0,
-                      count: stats.alternatingPatternCount,
-                    ),
+                    const SizedBox(height: 16),
+                    _buildPositionBiasGrid(stats.positionBias),
                   ],
                 ),
               ),
@@ -140,14 +214,38 @@ class StatsScreen extends StatelessWidget {
                         Icon(Icons.security),
                         SizedBox(width: 8),
                         Text(
-                          'Security Analysis',
+                          'Randomness Analysis',
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Text(
+                          'Randomness Score: ${stats.randomnessScore.toStringAsFixed(1)}/10',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const Spacer(),
+                        Icon(
+                          stats.randomnessScore > 7 ? Icons.check_circle :
+                          (stats.randomnessScore > 4 ? Icons.warning : Icons.error),
+                          color: stats.randomnessScore > 7 ? Colors.green :
+                          (stats.randomnessScore > 4 ? Colors.orange : Colors.red),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
+                    LinearProgressIndicator(
+                      value: stats.randomnessScore / 10,
+                      backgroundColor: Colors.grey[300],
+                      color: stats.randomnessScore > 7 ? Colors.green :
+                      (stats.randomnessScore > 4 ? Colors.orange : Colors.red),
+                      minHeight: 8,
+                    ),
+                    const SizedBox(height: 16),
                     Text(
-                      _getSecurityAnalysis(stats),
+                      _getRandomnessAnalysis(stats),
                       style: const TextStyle(fontSize: 14),
                     ),
                   ],
@@ -160,72 +258,128 @@ class StatsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildPatternItem(String label, bool exists, {int? count}) {
+  Widget _buildFrequencyItem(String item, int count, int total) {
+    final double percentage = count / total * 100;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         children: [
-          Icon(
-            exists ? Icons.check_circle : Icons.cancel,
-            color: exists ? Colors.green : Colors.red[300],
-            size: 20,
+          Text(
+            item,
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(label),
-          ),
-          if (count != null && count > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.blue[100],
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                count.toString(),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+            child: LinearProgressIndicator(
+              value: percentage / 100,
+              backgroundColor: Colors.grey[200],
+              color: percentage > 30 ? Colors.red :
+              (percentage > 20 ? Colors.orange : Colors.blue),
+              minHeight: 8,
             ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${count}x (${percentage.toStringAsFixed(1)}%)',
+            style: const TextStyle(fontSize: 12),
+          ),
         ],
       ),
     );
   }
 
-  String _getSecurityAnalysis(OtpStats stats) {
-    List<String> insights = [];
+  Widget _buildPositionBiasGrid(Map<int, int> positionBias) {
+    // Create a fixed 2x3 grid
+    return Column(
+      children: [
+        // First row - positions 1-3
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: List.generate(3, (index) {
+            return _buildPositionCell(index, positionBias);
+          }),
+        ),
+        const SizedBox(height: 12),
+        // Second row - positions 4-6
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: List.generate(3, (index) {
+            return _buildPositionCell(index + 3, positionBias);
+          }),
+        ),
+      ],
+    );
+  }
 
-    // Security concerns
-    if (stats.hasSequentialOtp) {
-      insights.add('⚠️ Some OTPs use sequential digits, which are less secure.');
+  Widget _buildPositionCell(int position, Map<int, int> positionBias) {
+    final String digit = positionBias.containsKey(position)
+        ? positionBias[position].toString()
+        : '?';
+
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Pos ${position + 1}',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            digit,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getRandomnessAnalysis(OtpStats stats) {
+    final List<String> insights = [];
+
+    if (stats.randomnessScore > 8) {
+      insights.add('✅ Your OTPs appear to be properly randomized with no significant patterns detected.');
+    } else {
+      if (stats.commonPrefixes.entries.where((e) => e.value > 1).isNotEmpty) {
+        var mostCommonPrefix = stats.commonPrefixes.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        if (mostCommonPrefix.first.value > stats.totalCount * 0.3) {
+          insights.add('⚠️ Strong prefix bias detected. The prefix "${mostCommonPrefix.first.key}" appears in ${mostCommonPrefix.first.value} of your OTPs.');
+        }
+      }
+
+      if (stats.digitPairs.entries.where((e) => e.value > 2).isNotEmpty) {
+        var mostCommonPair = stats.digitPairs.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        insights.add('⚠️ The digit sequence "${mostCommonPair.first.key}" appears ${mostCommonPair.first.value} times in your OTPs.');
+      }
+
+      if (stats.positionBias.isNotEmpty) {
+        insights.add('⚠️ Position bias detected. Certain digits appear more frequently in specific positions.');
+      }
     }
 
-    if (stats.hasAllSameDigitsOtp) {
-      insights.add('⚠️ Some OTPs use all identical digits, which are very weak.');
-    }
-
-    if (stats.palindromeCount > 0) {
-      insights.add('⚠️ ${stats.palindromeCount} OTPs are palindromes, making them slightly more predictable.');
-    }
-
-    if (stats.risingPatternCount > 0 || stats.fallingPatternCount > 0) {
-      insights.add('⚠️ ${stats.risingPatternCount + stats.fallingPatternCount} OTPs have strictly rising or falling patterns.');
-    }
-
-    if (stats.alternatingPatternCount > 0) {
-      insights.add('⚠️ ${stats.alternatingPatternCount} OTPs have alternating patterns, which are more predictable.');
-    }
-
-    // General insight on distribution
-    if (stats.mostCommonDigitCount > (stats.totalCount * 6) / 8) {
-      // If one digit appears in over 75% of positions it should be present
-      insights.add('⚠️ The digit ${stats.mostCommonDigit} appears unusually frequently, suggesting non-uniform distribution.');
-    }
-
-    // Positive feedback if no patterns detected
-    if (insights.isEmpty && stats.totalCount > 5) {
-      insights.add('✅ No concerning patterns detected in your OTPs. They appear to be randomly generated.');
-    } else if (insights.isEmpty) {
-      insights.add('More OTP data needed for comprehensive security analysis.');
+    if (insights.isEmpty) {
+      if (stats.totalCount > 5) {
+        insights.add('✅ No concerning patterns detected in your OTPs, but continue monitoring.');
+      } else {
+        insights.add('More OTP data needed for comprehensive randomness analysis.');
+      }
     }
 
     return insights.join('\n\n');

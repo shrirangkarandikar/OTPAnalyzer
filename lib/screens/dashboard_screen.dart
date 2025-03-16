@@ -11,6 +11,7 @@ import '../widgets/stats_card.dart';
 import 'stats_screen.dart';
 import 'filter_selection_screen.dart';
 import 'message_categories_screen.dart';
+import 'filter_comparison_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final FilterOptions filterOptions;
@@ -362,6 +363,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+
   Widget _buildFilterInfoCard() {
     String filterDescription;
     IconData filterIcon;
@@ -386,29 +388,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
       color: Colors.blue[50],
       child: Padding(
         padding: const EdgeInsets.all(12.0),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(filterIcon, color: Colors.blue[700]),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                filterDescription,
-                style: TextStyle(
-                  color: Colors.blue[800],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const FilterSelectionScreen(),
+            Row(
+              children: [
+                Icon(filterIcon, color: Colors.blue[700]),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    filterDescription,
+                    style: TextStyle(
+                      color: Colors.blue[800],
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                );
-              },
-              child: const Text('Change'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => FilterComparisonScreen(
+                          initialFilter: widget.filterOptions,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.compare_arrows),
+                  label: const Text('Compare'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const FilterSelectionScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text('Change'),
+                ),
+              ],
             ),
           ],
         ),

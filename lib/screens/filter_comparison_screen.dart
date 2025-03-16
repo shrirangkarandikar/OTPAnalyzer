@@ -1,29 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/filter_options.dart';
+import '../models/analysis_stats.dart';
+import '../models/comparison_result.dart';
 import '../services/sms_service.dart';
-import '../models/sms_message.dart';
-import 'dashboard_screen.dart';
+import 'comparison_screen.dart';
 
-class FilterSelectionScreen extends StatefulWidget {
-  const FilterSelectionScreen({Key? key}) : super(key: key);
+class FilterComparisonScreen extends StatefulWidget {
+  final FilterOptions initialFilter;
+
+  const FilterComparisonScreen({
+    Key? key,
+    required this.initialFilter,
+  }) : super(key: key);
 
   @override
-  State<FilterSelectionScreen> createState() => _FilterSelectionScreenState();
+  State<FilterComparisonScreen> createState() => _FilterComparisonScreenState();
 }
 
-class _FilterSelectionScreenState extends State<FilterSelectionScreen> {
+class _FilterComparisonScreenState extends State<FilterComparisonScreen> {
   final SmsService _smsService = SmsService();
   bool _isLoading = true;
   String _errorMessage = '';
   List<MapEntry<String, int>> _topSenders = [];
-  FilterType _selectedFilterType = FilterType.all;
-  List<SmsMessageModel> _allMessages = [];
 
-  // Date range selection
+  // Selected filter (second filter for comparison)
+  FilterType _selectedFilterType = FilterType.all;
+  String? _selectedSender;
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _endDate = DateTime.now();
-  String? _selectedSender;
+
+  // First filter data
+  AnalysisStats? _firstFilterStats;
 
   @override
   void initState() {
@@ -38,68 +46,136 @@ class _FilterSelectionScreenState extends State<FilterSelectionScreen> {
         _errorMessage = '';
       });
 
-      // Load all messages first
-      final messages = await _smsService.loadAllMessages();
-      _allMessages = messages;
+      // Make sure messages are loaded
+      await _smsService.loadAllMessages();
 
-      // Get top OTP senders
-      final topSenders = _smsService.getTopOtpSenders(3);
+      // Get filter data for the initial filter
+      final firstFilterMessages = await _smsService.getFilteredMessages(widget.initialFilter);
+      final firstFilterStats = _smsService.analyzeMessages(firstFilterMessages);
 
-      // Set date range to earliest and latest message dates
-      if (messages.isNotEmpty) {
-        final dates = messages.map((msg) => msg.date).toList();
+      // Get top senders for sender selection
+      final topSenders = _smsService.getTopOtpSenders(5);
+
+      // Set defaults for second filter
+      if (topSenders.isNotEmpty) {
+        // Choose a different sender than the first filter if possible
+        if (widget.initialFilter.type == FilterType.bySender && topSenders.length > 1) {
+          for (var sender in topSenders) {
+            if (sender.key != widget.initialFilter.sender) {
+              _selectedSender = sender.key;
+              break;
+            }
+          }
+        } else {
+          _selectedSender = topSenders.first.key;
+        }
+      }
+
+      // Get all messages for date range
+      final allMessages = await _smsService.getFilteredMessages(FilterOptions.all());
+      if (allMessages.isNotEmpty) {
+        // Set date range defaults (different from first filter if possible)
+        final dates = allMessages.map((msg) => msg.date).toList();
         final earliestDate = dates.reduce((a, b) => a.isBefore(b) ? a : b);
         final latestDate = dates.reduce((a, b) => a.isAfter(b) ? a : b);
 
-        _startDate = earliestDate;
-        _endDate = latestDate;
+        // If the first filter is a date range, try to set a different range
+        if (widget.initialFilter.type == FilterType.byDateRange) {
+          final midpoint = widget.initialFilter.startDate!.add(
+              Duration(
+                  milliseconds: (widget.initialFilter.endDate!.difference(widget.initialFilter.startDate!).inMilliseconds ~/ 2)
+              )
+          );
+
+          // Choose between earlier or later half
+          if (midpoint.isAfter(earliestDate.add(const Duration(days: 15)))) {
+            // Use earlier half
+            _startDate = earliestDate;
+            _endDate = midpoint;
+          } else {
+            // Use later half
+            _startDate = midpoint;
+            _endDate = latestDate;
+          }
+        } else {
+          // Default to full range
+          _startDate = earliestDate;
+          _endDate = latestDate;
+        }
       }
 
       setState(() {
+        _firstFilterStats = firstFilterStats;
         _topSenders = topSenders;
-        if (topSenders.isNotEmpty) {
-          _selectedSender = topSenders.first.key;
-        }
         _isLoading = false;
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to load messages: $e';
+        _errorMessage = 'Failed to load data: $e';
         _isLoading = false;
       });
     }
   }
 
-  void _proceedWithFilter() {
-    FilterOptions filterOptions;
+  Future<void> _proceedWithComparison() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
 
-    switch (_selectedFilterType) {
-      case FilterType.all:
-        filterOptions = FilterOptions.all();
-        break;
-      case FilterType.bySender:
-        filterOptions = FilterOptions.bySender(_selectedSender!);
-        break;
-      case FilterType.byDateRange:
-        filterOptions = FilterOptions.byDateRange(_startDate, _endDate);
-        break;
+      // Create second filter based on selection
+      FilterOptions secondFilter;
+
+      switch (_selectedFilterType) {
+        case FilterType.all:
+          secondFilter = FilterOptions.all();
+          break;
+        case FilterType.bySender:
+          secondFilter = FilterOptions.bySender(_selectedSender!);
+          break;
+        case FilterType.byDateRange:
+          secondFilter = FilterOptions.byDateRange(_startDate, _endDate);
+          break;
+      }
+
+      // Get analysis for second filter
+      final secondFilterMessages = await _smsService.getFilteredMessages(secondFilter);
+      final secondFilterStats = _smsService.analyzeMessages(secondFilterMessages);
+
+      // Create comparison result
+      final comparison = ComparisonResult(
+        firstStats: _firstFilterStats!,
+        secondStats: secondFilterStats,
+        firstFilter: widget.initialFilter,
+        secondFilter: secondFilter,
+      );
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      // Navigate to comparison screen
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ComparisonScreen(comparison: comparison),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to compare: $e';
+        _isLoading = false;
+      });
     }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => DashboardScreen(filterOptions: filterOptions),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Center(
-          child: Text('OTPAnalyzer'),
-        ),
+        title: const Text('Compare with Another Filter'),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -108,10 +184,6 @@ class _FilterSelectionScreenState extends State<FilterSelectionScreen> {
   }
 
   Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     if (_errorMessage.isNotEmpty) {
       return Center(
         child: Column(
@@ -137,27 +209,22 @@ class _FilterSelectionScreenState extends State<FilterSelectionScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildCurrentFilterCard(),
+          const SizedBox(height: 24),
+
           const Text(
-            'Choose OTP Analysis Options',
+            'Choose a filter to compare with:',
             style: TextStyle(
-              fontSize: 22,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Found ${_allMessages.length} messages in total',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[700],
-            ),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
           // Filter options
           _buildFilterOption(
-            title: 'Analyze All OTP Messages',
-            description: 'Include all OTP messages found on your device',
+            title: 'All OTP Messages',
+            description: 'Compare with all OTPs on your device',
             filterType: FilterType.all,
             icon: Icons.all_inclusive,
           ),
@@ -165,7 +232,7 @@ class _FilterSelectionScreenState extends State<FilterSelectionScreen> {
           const SizedBox(height: 16),
           _buildFilterOption(
             title: 'Filter by Sender',
-            description: 'Analyze OTPs from a specific sender',
+            description: 'Compare with OTPs from a specific sender',
             filterType: FilterType.bySender,
             icon: Icons.person,
           ),
@@ -177,7 +244,7 @@ class _FilterSelectionScreenState extends State<FilterSelectionScreen> {
           const SizedBox(height: 16),
           _buildFilterOption(
             title: 'Filter by Date Range',
-            description: 'Analyze OTPs from a specific time period',
+            description: 'Compare with OTPs from a specific time period',
             filterType: FilterType.byDateRange,
             icon: Icons.date_range,
           ),
@@ -191,17 +258,82 @@ class _FilterSelectionScreenState extends State<FilterSelectionScreen> {
           // Proceed button
           Center(
             child: ElevatedButton(
-              onPressed: _proceedWithFilter,
+              onPressed: _proceedWithComparison,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
               ),
               child: const Text(
-                'Proceed with Analysis',
+                'Compare Filters',
                 style: TextStyle(fontSize: 16),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentFilterCard() {
+    String filterDescription;
+    IconData filterIcon;
+
+    switch (widget.initialFilter.type) {
+      case FilterType.all:
+        filterDescription = 'All OTP messages';
+        filterIcon = Icons.all_inclusive;
+        break;
+      case FilterType.bySender:
+        filterDescription = 'OTPs from ${widget.initialFilter.sender}';
+        filterIcon = Icons.person;
+        break;
+      case FilterType.byDateRange:
+        final dateFormat = DateFormat('MMM dd, yyyy');
+        filterDescription = 'OTPs from ${dateFormat.format(widget.initialFilter.startDate!)} to ${dateFormat.format(widget.initialFilter.endDate!)}';
+        filterIcon = Icons.date_range;
+        break;
+    }
+
+    return Card(
+      color: Colors.blue[50],
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(filterIcon, color: Colors.blue[700]),
+                const SizedBox(width: 12),
+                const Text(
+                  'Current Filter',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              filterDescription,
+              style: TextStyle(
+                color: Colors.blue[800],
+                fontSize: 16,
+              ),
+            ),
+            if (_firstFilterStats != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Text(
+                  'Found ${_firstFilterStats!.otpMessagesCount} OTP messages',
+                  style: TextStyle(
+                    color: Colors.blue[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

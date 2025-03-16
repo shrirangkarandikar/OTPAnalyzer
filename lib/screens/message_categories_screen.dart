@@ -51,10 +51,29 @@ class _MessageCategoriesScreenState extends State<MessageCategoriesScreen> with 
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            Tab(text: 'OTP Messages (${_otpMessages.length})'),
-            Tab(text: 'OTP No Code (${_otpStringNoCodeMessages.length})'),
-            Tab(text: 'Other (${_otherMessages.length})'),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('OTP Messages'),
+                Text('(${_otpMessages.length})'),
+              ],
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('OTP No Code'),
+                Text('(${_otpStringNoCodeMessages.length})'),
+              ],
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Other'),
+                Text('(${_otherMessages.length})'),
+              ],
+            ),
           ],
+          labelPadding: const EdgeInsets.symmetric(vertical: 8.0),
         ),
       ),
       body: TabBarView(

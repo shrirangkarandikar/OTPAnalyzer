@@ -5,12 +5,20 @@ import 'dart:math' as math;
 import '../models/analysis_stats.dart';
 import '../models/otp_stats.dart';
 import '../models/sms_message.dart';
+import '../models/filter_options.dart';
 import '../services/sms_service.dart';
 import '../widgets/stats_card.dart';
 import 'stats_screen.dart';
+import 'filter_selection_screen.dart';
+import 'message_categories_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({Key? key}) : super(key: key);
+  final FilterOptions filterOptions;
+
+  const DashboardScreen({
+    Key? key,
+    required this.filterOptions,
+  }) : super(key: key);
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -19,7 +27,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final SmsService _smsService = SmsService();
   AnalysisStats? _stats;
-  List<SmsMessageModel> _allMessages = [];
+  List<SmsMessageModel> _filteredMessages = [];
   bool _isLoading = true;
   String _errorMessage = '';
 
@@ -36,14 +44,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     try {
-      // Get all messages
-      final messages = await _smsService.getAllMessages();
+      // Get filtered messages based on options
+      final messages = await _smsService.getFilteredMessages(widget.filterOptions);
 
       // Analyze the messages
       final stats = _smsService.analyzeMessages(messages);
 
       setState(() {
-        _allMessages = messages;
+        _filteredMessages = messages;
         _stats = stats;
         _isLoading = false;
       });
@@ -61,6 +69,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         title: const Text('OTP Analyzer Dashboard'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.message),
+            tooltip: 'View Messages',
+            onPressed: () {
+              if (_stats != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => MessageCategoriesScreen(
+                      messages: _filteredMessages,
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            tooltip: 'Change Filters',
+            onPressed: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const FilterSelectionScreen(),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -97,8 +133,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     if (_stats == null || _stats!.otpStats.totalCount == 0) {
-      return const Center(
-        child: Text('No OTP data available. Try receiving some OTP messages first.'),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'No OTP data available with the current filter.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const FilterSelectionScreen(),
+                  ),
+                );
+              },
+              child: const Text('Change Filter Options'),
+            ),
+          ],
+        ),
       );
     }
 
@@ -114,6 +171,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),
+
+          // Filter information
+          _buildFilterInfoCard(),
+          const SizedBox(height: 16),
+
           Text(
             'Based on ${_stats!.totalMessagesRead} messages analyzed from ${dateFormat.format(_stats!.earliestMessageDate)} to ${dateFormat.format(_stats!.latestMessageDate)}',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -249,7 +311,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _buildMessageCategoriesChart(),
+                  _buildMessageCategories(),
                 ],
               ),
             ),
@@ -296,6 +358,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterInfoCard() {
+    String filterDescription;
+    IconData filterIcon;
+
+    switch (widget.filterOptions.type) {
+      case FilterType.all:
+        filterDescription = 'Showing all OTP messages';
+        filterIcon = Icons.all_inclusive;
+        break;
+      case FilterType.bySender:
+        filterDescription = 'Showing OTPs from ${widget.filterOptions.sender}';
+        filterIcon = Icons.person;
+        break;
+      case FilterType.byDateRange:
+        final dateFormat = DateFormat('MMM dd, yyyy');
+        filterDescription = 'Showing OTPs from ${dateFormat.format(widget.filterOptions.startDate!)} to ${dateFormat.format(widget.filterOptions.endDate!)}';
+        filterIcon = Icons.date_range;
+        break;
+    }
+
+    return Card(
+      color: Colors.blue[50],
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Row(
+          children: [
+            Icon(filterIcon, color: Colors.blue[700]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                filterDescription,
+                style: TextStyle(
+                  color: Colors.blue[800],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const FilterSelectionScreen(),
+                  ),
+                );
+              },
+              child: const Text('Change'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -367,111 +483,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildMessageCategoriesChart() {
-    // Create a bar chart for message categories
-    return SizedBox(
-      height: 200,
-      child: BarChart(
-        BarChartData(
-          alignment: BarChartAlignment.spaceAround,
-          maxY: math.max(
-            _stats!.otpMessagesCount.toDouble(),
-            math.max(
-              _stats!.otpStringNoCodeCount.toDouble(),
-              _stats!.otherMessagesCount.toDouble(),
-            ),
-          ) * 1.2, // Add 20% padding
-          barTouchData: BarTouchData(enabled: false),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (double value, TitleMeta meta) {
-                  String label;
-                  switch (value.toInt()) {
-                    case 0:
-                      label = 'OTP';
-                      break;
-                    case 1:
-                      label = 'OTP No Code';
-                      break;
-                    case 2:
-                      label = 'Other';
-                      break;
-                    default:
-                      label = '';
-                  }
-                  return SideTitleWidget(
-                    meta: meta,
-                    space: 4,
-                    angle: 0,
-                    child: Text(
-                      label,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  );
-                },
-                reservedSize: 30,
-              ),
-            ),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 40,
-              ),
-            ),
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-          borderData: FlBorderData(show: false),
-          gridData: FlGridData(show: true, horizontalInterval: 10),
-          barGroups: [
-            BarChartGroupData(
-              x: 0,
-              barRods: [
-                BarChartRodData(
-                  toY: _stats!.otpMessagesCount.toDouble(),
-                  color: Colors.blue,
-                  width: 40,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(6),
-                    topRight: Radius.circular(6),
-                  ),
-                ),
-              ],
-            ),
-            BarChartGroupData(
-              x: 1,
-              barRods: [
-                BarChartRodData(
-                  toY: _stats!.otpStringNoCodeCount.toDouble(),
-                  color: Colors.orange,
-                  width: 40,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(6),
-                    topRight: Radius.circular(6),
-                  ),
-                ),
-              ],
-            ),
-            BarChartGroupData(
-              x: 2,
-              barRods: [
-                BarChartRodData(
-                  toY: _stats!.otherMessagesCount.toDouble(),
-                  color: Colors.grey,
-                  width: 40,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(6),
-                    topRight: Radius.circular(6),
-                  ),
-                ),
-              ],
-            ),
-          ],
+  Widget _buildMessageCategories() {
+    return Column(
+      children: [
+        _buildCategoryItem(
+          'OTP Messages',
+          _stats!.otpMessagesCount,
+          Colors.blue,
+          Icons.check_circle,
         ),
-      ),
+        const SizedBox(height: 12),
+        _buildCategoryItem(
+          'OTP String (No Code)',
+          _stats!.otpStringNoCodeCount,
+          Colors.orange,
+          Icons.warning,
+        ),
+        const SizedBox(height: 12),
+        _buildCategoryItem(
+          'Other Messages',
+          _stats!.otherMessagesCount,
+          Colors.grey,
+          Icons.message,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryItem(String title, int count, Color color, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withOpacity(0.3)),
+          ),
+          child: Text(
+            count.toString(),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: color.withOpacity(0.8),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

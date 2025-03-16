@@ -8,7 +8,12 @@ import '../widgets/sms_message_card.dart';
 import 'stats_screen.dart';
 
 class MessageCategoriesScreen extends StatefulWidget {
-  const MessageCategoriesScreen({Key? key}) : super(key: key);
+  final List<SmsMessageModel> messages;
+
+  const MessageCategoriesScreen({
+    Key? key,
+    required this.messages,
+  }) : super(key: key);
 
   @override
   State<MessageCategoriesScreen> createState() => _MessageCategoriesScreenState();
@@ -16,17 +21,20 @@ class MessageCategoriesScreen extends StatefulWidget {
 
 class _MessageCategoriesScreenState extends State<MessageCategoriesScreen> with SingleTickerProviderStateMixin {
   final SmsService _smsService = SmsService();
-  List<SmsMessageModel> _allMessages = [];
-  AnalysisStats? _stats;
-  bool _isLoading = true;
-  String _errorMessage = '';
   late TabController _tabController;
+  late List<SmsMessageModel> _otpMessages;
+  late List<SmsMessageModel> _otpStringNoCodeMessages;
+  late List<SmsMessageModel> _otherMessages;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _loadMessages();
+
+    // Categorize messages
+    _otpMessages = _smsService.getOtpMessages(widget.messages);
+    _otpStringNoCodeMessages = _smsService.getOtpStringNoCodeMessages(widget.messages);
+    _otherMessages = _smsService.getOtherMessages(widget.messages);
   }
 
   @override
@@ -35,189 +43,27 @@ class _MessageCategoriesScreenState extends State<MessageCategoriesScreen> with 
     super.dispose();
   }
 
-  Future<void> _loadMessages() async {
-    try {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = '';
-      });
-
-      final messages = await _smsService.getAllMessages();
-      final stats = _smsService.analyzeMessages(messages);
-
-      setState(() {
-        _allMessages = messages;
-        _stats = stats;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to load messages: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Message Categories'),
-        actions: [
-          if (_stats != null)
-            IconButton(
-              icon: const Icon(Icons.bar_chart),
-              tooltip: 'View Analysis',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => StatsScreen(stats: _stats!.otpStats),
-                  ),
-                );
-              },
-            ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _loadMessages,
-          ),
-        ],
-        bottom: _isLoading ? null : TabBar(
+        bottom: TabBar(
           controller: _tabController,
           tabs: [
-            Tab(text: 'OTP Messages (${_stats?.otpMessagesCount ?? 0})'),
-            Tab(text: 'OTP No Code (${_stats?.otpStringNoCodeCount ?? 0})'),
-            Tab(text: 'Other (${_stats?.otherMessagesCount ?? 0})'),
+            Tab(text: 'OTP Messages (${_otpMessages.length})'),
+            Tab(text: 'OTP No Code (${_otpStringNoCodeMessages.length})'),
+            Tab(text: 'Other (${_otherMessages.length})'),
           ],
         ),
       ),
-      body: _buildBody(),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_errorMessage.isNotEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _errorMessage,
-              style: const TextStyle(color: Colors.red),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadMessages,
-              child: const Text('Try Again'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_allMessages.isEmpty) {
-      return const Center(
-        child: Text('No messages found'),
-      );
-    }
-
-    return Column(
-      children: [
-        // Stats summary card
-        if (_stats != null)
-          _buildStatsSummaryCard(),
-
-        // Message categories
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildMessageList(_smsService.getOtpMessages(_allMessages)),
-              _buildMessageList(_smsService.getOtpStringNoCodeMessages(_allMessages)),
-              _buildMessageList(_smsService.getOtherMessages(_allMessages)),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatsSummaryCard() {
-    final dateFormat = DateFormat('MMM dd, yyyy');
-    final stats = _stats!;
-
-    return Card(
-      margin: const EdgeInsets.all(16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.analytics_outlined),
-                const SizedBox(width: 8),
-                Text(
-                  'Message Analysis Summary',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ),
-            const Divider(),
-            Text(
-              'Analyzed ${stats.totalMessagesRead} total messages from ${dateFormat.format(stats.earliestMessageDate)} to ${dateFormat.format(stats.latestMessageDate)}',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Found ${stats.otpMessagesCount} messages with valid OTP codes',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-
-            // Most frequent senders
-            if (stats.mostFrequentOtpSender.isNotEmpty)
-              RichText(
-                text: TextSpan(
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  children: [
-                    const TextSpan(
-                      text: 'Most frequent OTP sender: ',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    TextSpan(
-                      text: '${stats.mostFrequentOtpSender} (${stats.mostFrequentOtpSenderCount} messages)',
-                    ),
-                  ],
-                ),
-              ),
-
-            if (stats.mostFrequentOverallSender.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: RichText(
-                  text: TextSpan(
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    children: [
-                      const TextSpan(
-                        text: 'Most frequent overall sender: ',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      TextSpan(
-                        text: '${stats.mostFrequentOverallSender} (${stats.mostFrequentOverallSenderCount} messages)',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildMessageList(_otpMessages),
+          _buildMessageList(_otpStringNoCodeMessages),
+          _buildMessageList(_otherMessages),
+        ],
       ),
     );
   }

@@ -32,7 +32,7 @@ class _DetailedAnalysisScreenState extends State<DetailedAnalysisScreen> {
     });
 
     try {
-      final messages = await _smsService.getAllMessages();
+      final messages = await _smsService.loadAllMessages();
 
       // Get only messages with OTP codes
       final otpMessages = _smsService.getOtpMessages(messages);

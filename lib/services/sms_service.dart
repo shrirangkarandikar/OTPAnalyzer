@@ -1,14 +1,18 @@
 import 'package:telephony/telephony.dart';
 import '../models/sms_message.dart';
-import '../models/otp_stats.dart';
 import '../models/analysis_stats.dart';
+import '../models/otp_stats.dart';
+import '../models/filter_options.dart';
 import 'dart:math' as math;
 import 'dart:developer' as developer;
 
 class SmsService {
   final Telephony _telephony = Telephony.instance;
+  List<SmsMessageModel> _allMessages = [];
+  bool _messagesLoaded = false;
 
-  Future<List<SmsMessageModel>> getAllMessages({int limit = 10000}) async {
+  // Get all messages from device
+  Future<List<SmsMessageModel>> loadAllMessages() async {
     try {
       // Request permission using telephony package's built-in method
       bool? permissionsGranted = await _telephony.requestPhoneAndSmsPermissions;
@@ -29,13 +33,8 @@ class SmsService {
         sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
       );
 
-      // Take only the specified number of messages
-      final limitedMessages = limit > 0 && limit < messages.length
-          ? messages.take(limit).toList()
-          : messages;
-
       // Convert to our model and check for OTP content
-      return limitedMessages.map((message) {
+      _allMessages = messages.map((message) {
         final messageBody = message.body ?? '';
         final hasOtpString = messageBody.toUpperCase().contains("OTP");
         final otpCode = hasOtpString ? extractOtpCode(messageBody) : null;
@@ -52,9 +51,62 @@ class SmsService {
           hasOtpString: hasOtpString,
         );
       }).toList();
+
+      _messagesLoaded = true;
+      return _allMessages;
     } catch (e) {
       throw Exception('Failed to query SMS messages: $e');
     }
+  }
+
+  // Get messages based on filter options
+  Future<List<SmsMessageModel>> getFilteredMessages(FilterOptions options) async {
+    // Make sure messages are loaded
+    if (!_messagesLoaded) {
+      await loadAllMessages();
+    }
+
+    // Apply filters
+    List<SmsMessageModel> filteredMessages;
+
+    switch (options.type) {
+      case FilterType.all:
+        filteredMessages = List.from(_allMessages);
+        break;
+      case FilterType.bySender:
+        filteredMessages = _allMessages
+            .where((msg) => msg.address == options.sender)
+            .toList();
+        break;
+      case FilterType.byDateRange:
+        filteredMessages = _allMessages.where((msg) {
+          return msg.date.isAfter(options.startDate!) &&
+              msg.date.isBefore(options.endDate!.add(const Duration(days: 1)));
+        }).toList();
+        break;
+      default:
+        filteredMessages = List.from(_allMessages);
+    }
+
+    return filteredMessages;
+  }
+
+  // Get the top senders of OTP messages
+  List<MapEntry<String, int>> getTopOtpSenders(int count) {
+    // Get all messages with OTP codes
+    final otpMessages = getOtpMessages(_allMessages);
+
+    // Count by sender
+    Map<String, int> senderCounts = {};
+    for (var msg in otpMessages) {
+      senderCounts[msg.address] = (senderCounts[msg.address] ?? 0) + 1;
+    }
+
+    // Sort and take top count
+    var sorted = senderCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return sorted.take(math.min(count, sorted.length)).toList();
   }
 
   String? extractOtpCode(String messageBody) {
@@ -106,9 +158,9 @@ class SmsService {
     }
 
     // Categorize messages
-    final otpMessages = messages.where((msg) => msg.otpCode != null).toList();
-    final otpStringNoCodeMessages = messages.where((msg) => msg.hasOtpString && msg.otpCode == null).toList();
-    final otherMessages = messages.where((msg) => !msg.hasOtpString).toList();
+    final otpMessages = getOtpMessages(messages);
+    final otpStringNoCodeMessages = getOtpStringNoCodeMessages(messages);
+    final otherMessages = getOtherMessages(messages);
 
     // Find date range
     DateTime earliestDate = messages.map((m) => m.date).reduce((a, b) => a.isBefore(b) ? a : b);
@@ -189,6 +241,7 @@ class SmsService {
       return OtpStats.empty();
     }
 
+    // Rest of the analyzeOtpCodes function remains the same...
     // Convert to integers for analysis
     final otpInts = otpCodes.map((otp) => int.parse(otp)).toList();
 

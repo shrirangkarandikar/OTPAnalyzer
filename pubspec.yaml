@@ -1,5 +1,5 @@
 name: otp_analyzer
-description: "A Flutter app that reads SMS messages."
+description: "Analyze OTP (one time passwords) to detect patterns and security issues"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -49,12 +49,54 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+  #flutter_native_splash: ^2.3.6
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  adaptive_icon_background: "#FFFFFF"  # Or your background color
+  adaptive_icon_foreground: "assets/icon/foreground.png"
+  android_legacy: true
+  image_path: "assets/icon/icon.png"
+
+flutter_native_splash:
+  # Background color
+  color: "#2962FF"
+  # Or use a background image
+  background_image: "assets/splash/background.png"
+
+  # Image to display in the center of the screen
+  image: "assets/icon/icon.png"
+
+  # Branding text at the bottom of the splash screen
+  branding: "assets/splash/branding.png"
+  # Or use text instead of an image
+  # branding_text: "Your Security Matters"
+  # branding_text_color: "#FFFFFF"
+
+  # For dark mode (optional)
+  #color_dark: "#042a49"
+  #image_dark: "assets/splash/splash-dark.png"
+
+  # Android 12 settings
+  #android_12:
+    #image: "assets/splash/android12_splash.png"
+    #icon_background_color: "#2962FF"
+
+  # Platform-specific settings (optional)
+  web: false
+  fullscreen: true
+
+
 # The following section is specific to Flutter packages.
 flutter:
+  assets:
+    - assets/
+    - assets/icon/
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

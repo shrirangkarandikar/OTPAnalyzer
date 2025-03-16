@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/sms_message.dart';
 
@@ -51,15 +52,44 @@ class SmsMessageCard extends StatelessWidget {
               style: const TextStyle(fontSize: 14.0),
             ),
             const SizedBox(height: 8.0),
-            Text(
-              formattedDate,
-              style: TextStyle(
-                fontSize: 12.0,
-                color: Colors.grey[600],
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  formattedDate,
+                  style: TextStyle(
+                    fontSize: 12.0,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                if (message.otpCode != null)
+                  _buildOtpChip(context, message.otpCode!),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildOtpChip(BuildContext context, String otpCode) {
+    return InkWell(
+      onTap: () {
+        Clipboard.setData(ClipboardData(text: otpCode));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('OTP copied to clipboard'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      },
+      child: Chip(
+        backgroundColor: Colors.blue[100],
+        label: Text(
+          'OTP: $otpCode',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        avatar: const Icon(Icons.copy, size: 16),
       ),
     );
   }

@@ -4,6 +4,7 @@ class SmsMessageModel {
   final String body;
   final DateTime date;
   final bool isRead;
+  final String? otpCode; // Added OTP code field
 
   SmsMessageModel({
     required this.id,
@@ -11,5 +12,6 @@ class SmsMessageModel {
     required this.body,
     required this.date,
     required this.isRead,
+    this.otpCode,
   });
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../services/sms_service.dart';
 import '../models/sms_message.dart';
 import '../widgets/sms_message_card.dart';
@@ -20,28 +19,19 @@ class _SmsScreenState extends State<SmsScreen> {
   @override
   void initState() {
     super.initState();
-    _requestPermissionAndLoadMessages();
+    _loadMessages();
   }
 
-  Future<void> _requestPermissionAndLoadMessages() async {
-    final status = await Permission.sms.request();
-    
-    if (status.isGranted) {
-      try {
-        final messages = await _smsService.getLastFiveMessages();
-        setState(() {
-          _messages = messages;
-          _isLoading = false;
-        });
-      } catch (e) {
-        setState(() {
-          _errorMessage = 'Failed to load messages: $e';
-          _isLoading = false;
-        });
-      }
-    } else {
+  Future<void> _loadMessages() async {
+    try {
+      final messages = await _smsService.getLastFiveOtpMessages();
       setState(() {
-        _errorMessage = 'SMS permission denied';
+        _messages = messages;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load messages: $e';
         _isLoading = false;
       });
     }
@@ -52,14 +42,14 @@ class _SmsScreenState extends State<SmsScreen> {
       _isLoading = true;
       _errorMessage = '';
     });
-    await _requestPermissionAndLoadMessages();
+    await _loadMessages();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Last 5 SMS Messages'),
+        title: const Text('Last 5 OTP Messages'),
       ),
       body: _buildBody(),
       floatingActionButton: FloatingActionButton(
@@ -97,7 +87,7 @@ class _SmsScreenState extends State<SmsScreen> {
 
     if (_messages.isEmpty) {
       return const Center(
-        child: Text('No SMS messages found'),
+        child: Text('No OTP messages found'),
       );
     }
 
